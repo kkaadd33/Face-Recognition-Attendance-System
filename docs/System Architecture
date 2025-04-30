@@ -1,0 +1,75 @@
+# System Architecture
+
+This document outlines the architecture of the Face Recognition Attendance System, covering the models used and the processing pipeline.
+
+## Core Components
+
+1.  **Face Detection**: Identifies the location of faces in input frames.
+2.  **Face Alignment**: (Implicitly handled by MTCNN) Aligns faces for consistent feature extraction.
+3.  **Liveness Detection**: Analyzes facial features to determine if a face is real or a spoof attempt (photo, screen).
+4.  **Face Embedding**: Extracts a unique numerical representation (vector) of each detected face.
+5.  **Face Recognition**: Compares the embedding of a detected face against a database of known face embeddings to find a match.
+6.  **Attendance Tracking**: Manages the attendance status of recognized individuals based on detection history and confidence.
+7.  **GUI**: Provides a user interface for monitoring camera feeds, viewing attendance, controlling the system, and viewing logs.
+
+## Models Used
+
+1.  **MTCNN (Multi-task Cascaded Convolutional Networks)**
+    *   **Library**: `facenet-pytorch`
+    *   **Purpose**: Face detection and initial landmark estimation. It detects bounding boxes around faces in the input image.
+    *   **Configuration**: Tuned parameters (`min_face_size`, `thresholds`) for a balance between speed and accuracy, favoring slightly larger faces and stricter detection to reduce false positives in potentially crowded classroom scenes. It's configured to keep all detected faces initially (`keep_all=True`), which are then filtered based on probability and Non-Max Suppression (NMS).
+
+2.  **InceptionResnetV1**
+    *   **Library**: `facenet-pytorch` (pre-trained on VGGFace2)
+    *   **Purpose**: Face embedding generation. Takes the detected and preprocessed face region and outputs a fixed-size vector (embedding) that represents the face's unique features.
+    *   **Usage**: Used in evaluation mode (`eval()`) on the specified device (CPU or CUDA GPU). Mixed-precision (`autocast`) is used on CUDA for potential performance improvements.
+
+3.  **Dlib Facial Landmark Predictor**
+    *   **Library**: `dlib`
+    *   **Model File**: `shape_predictor_68_face_landmarks.dat` (External download required)
+    *   **Purpose**: Precise facial landmark detection (68 points) used primarily for liveness detection, specifically for calculating the Eye Aspect Ratio (EAR) for blink detection.
+    *   **Dependencies**: Requires the pre-trained `.dat` model file to be present.
+
+4.  **Liveness Models (Implicit/Heuristic)**
+    *   **Texture Analysis**: Uses image processing techniques (e.g., Sobel gradients, variance) on the grayscale face region to assess texture complexity. Real faces tend to have more complex textures than photos or screens.
+    *   **Movement Analysis**: Tracks the standard deviation of face center point movements across frames. Lack of micro-movements or overly rigid movement can indicate a static image.
+    *   **Eye Aspect Ratio (EAR)**: Calculates the ratio of eye height to width using dlib landmarks. Low EAR suggests a blink. EAR variance over time is analyzed in `embeddings.py` at session end to detect unnaturally static eyes (common in photos).
+    *   **Screen Detection (`embeddings.py` only)**: Analyzes color distribution, glare, and potential Moiré patterns to estimate the probability that the face is being displayed on a screen.
+
+## Processing Pipeline
+
+1.  **Frame Capture**: Separate threads capture frames from each active camera source (`cv2.VideoCapture`) and put them onto thread-safe queues (`queue.Queue`). Grab/retrieve methods are used for potential speedup.
+2.  **Frame Scheduling**: The main update loop (`update_video`) retrieves frames from the queues. Based on the `detection_skip_rate` (which can be adaptive), it decides whether to process the current frame for recognition.
+3.  **Frame Submission**: If a frame is scheduled for processing and recognition is active, a copy of the frame is submitted to a `ThreadPoolExecutor` for background processing (`process_frame`). Display frames are handled separately.
+4.  **Preprocessing (`process_frame`)**:
+    *   Convert frame to RGB.
+    *   Apply adaptive preprocessing (histogram equalization or CLAHE + Gaussian blur) based on the recent average number of detected faces.
+5.  **Face Detection (`process_frame`)**:
+    *   Run MTCNN on the preprocessed frame to get bounding boxes and probabilities.
+    *   Filter detections based on a minimum probability threshold.
+    *   Apply Non-Max Suppression (NMS) to remove highly overlapping boxes.
+    *   Limit the number of faces to process (`max_faces_per_frame`) based on probability/size.
+6.  **Liveness & Recognition Loop (`process_frame`)**: For each valid detected face box:
+    *   **Tracking Check**: Check if the face corresponds to an already tracked identity based on location overlap (IoU) using `check_face_tracking`.
+    *   **Liveness Check**: If enabled and necessary (new face or tracked face interval passed), perform liveness checks (`check_liveness`) using the *original* BGR face region. This involves texture, movement (if tracked), EAR calculation, and potentially screen detection.
+    *   **Embedding/Recognition**:
+        *   *If Tracked*: Use the tracked identity and similarity score. Update TTL and box position.
+        *   *If New/Unknown*:
+            *   Check a short-term embedding cache based on approximate location.
+            *   *If Not Cached*: Extract the face region (RGB), resize to 160x160, normalize, and add to a batch.
+    *   **Batch Embedding**: Process the batch of new face tensors through the InceptionResnetV1 model to get embeddings.
+    *   **Batch Recognition**: For each new embedding, compare it against known face embeddings using cosine similarity (`recognize_face`). Update the embedding cache. Update face tracking if a known face is found.
+7.  **Annotation Update**: Store the results (boxes, matched IDs, similarity, liveness info) for the processed frame. This is done within a lock (`processing_lock`) to ensure thread safety for the shared `display_annotations` dictionary.
+8.  **GUI Update (`update_display`)**: Runs independently in the main thread.
+    *   Retrieves the latest display frames for each camera.
+    *   Retrieves the latest annotations for each camera (if recognition is active).
+    *   Draws bounding boxes and labels (ID, similarity, liveness status) onto copies of the display frames.
+    *   Resizes frames and updates the `Tkinter` labels.
+    *   Updates statistics (counts, attendance rate) in the GUI panels.
+9.  **Confidence Calculation (`calculate_multi_camera_confidence`)**: Periodically calculates an aggregate confidence score for each tracked person based on detection history across active cameras over a defined interval (`frames_interval`). Updates the attendance table.
+10. **Attendance Finalization (`stop_recognition`)**: When recognition is stopped:
+    *   Calculates the final average confidence for each tracked person.
+    *   Performs session-end liveness analysis (`embeddings.py` only) using EAR variance.
+    *   Determines final status (Present/Absent) and updates the attendance table and logs.
+11. **Export (`export_attendance`)**: Generates an Excel sheet and a summary text file with the final attendance status for all registered students.
+
