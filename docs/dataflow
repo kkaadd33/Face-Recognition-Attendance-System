@@ -1,0 +1,134 @@
+# Data Flow
+
+This document describes the flow of data through the Face Recognition Attendance System, from input capture to final output.
+
+```mermaid
+graph TD
+    A[Camera Input] --> B(Camera Thread);
+    B -- Frame + Timestamp --> C{Frame Queue};
+    C --> D[Main Update Loop (update_video)];
+    D -- Display Frame --> E{Display Frames Dict};
+    D -- Process Frame Copy --> F{ThreadPoolExecutor};
+    F -- Submit Task --> G(process_frame Thread);
+    G -- Use Frame Copy --> H{Preprocessing};
+    H --> I{MTCNN Detection};
+    I -- Boxes/Probs --> J{Filtering & NMS};
+    J -- Valid Boxes --> K{Liveness & Recognition Loop};
+    K -- Track Check --> L[Face Tracking Dict (Shared)];
+    K -- Liveness Check --> M[Liveness Analysis];
+    M -- Liveness Score/Status --> N{Detection Results (Current Frame)};
+    K -- New Face Region (BGR) --> M;
+    K -- New Face Region (RGB) --> O{Batch for Embedding};
+    O -- Batch Tensors --> P[InceptionResnetV1 Model];
+    P -- Embeddings --> Q{Recognition vs Known DB};
+    Q -- Matched ID/Similarity --> N;
+    Q -- Known Face Embeddings --> R[Known Faces Dict];
+    Q -- Update Known --> L;
+    K -- Cached Result --> N;
+    N -- Annotations --> S{Display Annotations Dict (Shared)};
+    E --> T[GUI Update (update_display)];
+    S --> T;
+    L --> T;  // For unknown/fake counts
+    T -- Update --> U[Tkinter GUI Elements];
+    D -- Trigger Periodic --> V[Confidence Calculation (calculate_multi_camera_confidence)];
+    V -- Use Face Detections History --> V;
+    V -- Update --> W[Attendance Dict (Shared)];
+    V -- Update --> X[Attendance Treeview (GUI)];
+    W --> X; // Initial insert
+    Y[Stop Button] --> Z[stop_recognition Function];
+    Z -- Use Confidence History --> Z;
+    Z -- Use Liveness History --> Z;
+    Z -- Final Status --> W;
+    Z -- Final Status --> X;
+    AA[Export Button] --> BB[export_attendance Function];
+    BB -- Use Attendance Dict --> BB;
+    BB -- Write --> CC[Excel File Output];
+    BB -- Write --> DD[Summary Text File Output];
+    G -- Log Message --> EE{Log Queue};
+    FF[Main Thread Log Processor] --> EE;
+    FF -- Update --> GG[Status Text Widget (GUI)];
+
+    subgraph Input
+        A
+    end
+    subgraph Capture Threads
+        B --> C
+    end
+    subgraph Main Thread
+        D --> E
+        D --> F
+        T --> U
+        V --> X
+        FF --> GG
+        Z
+        BB
+    end
+    subgraph Processing Threads (Executor)
+        G --> H --> I --> J --> K
+        K --> L
+        K --> M --> N
+        K --> O --> P --> Q
+        Q --> R
+        Q --> N
+        N --> S
+        G --> EE
+    end
+    subgraph Shared Data (Locks Recommended)
+        S
+        W
+        L
+    end
+    subgraph GUI
+        U
+        X
+        GG
+        Y
+        AA
+    end
+    subgraph Output
+        CC
+        DD
+    end
+```
+
+## Flow Description
+
+1.  **Input**: Video frames are captured from specified sources (files or webcams) by dedicated `Camera Thread`s.
+2.  **Queuing**: Each camera thread puts captured frames (with timestamps) onto a `Frame Queue` (limited size).
+3.  **Scheduling & Display**: The `Main Update Loop` (in the main GUI thread) fetches frames from the queues.
+    *   A copy is stored in `Display Frames Dict` for immediate display.
+    *   Periodically (based on `detection_skip_rate`), another copy is submitted to the `ThreadPoolExecutor` for processing.
+4.  **Background Processing**: The `ThreadPoolExecutor` manages worker threads that execute the `process_frame` function.
+    *   **Preprocessing**: Input frame undergoes enhancements (CLAHE/Equalization).
+    *   **Detection**: MTCNN detects faces, followed by filtering and NMS.
+    *   **Liveness/Recognition**: For each valid face:
+        *   Checks against the `Face Tracking Dict`.
+        *   If needed, performs `Liveness Analysis` (texture, movement, EAR, screen) on the BGR face region.
+        *   If tracked, uses the existing ID.
+        *   If new/unknown, checks a cache or adds the RGB face region to a batch for embedding.
+    *   **Embedding/Recognition**: Batched faces are processed by InceptionResnetV1. Resulting embeddings are compared to the `Known Faces Dict`. Results update the tracking dict and short-term cache.
+    *   **Annotations**: Results (box, ID, similarity, liveness) for the frame are stored thread-safely in the `Display Annotations Dict`.
+    *   **Logging**: Status messages/errors are put onto a `Log Queue`.
+5.  **GUI Updates**: The `Main Update Loop` calls `update_display`:
+    *   Retrieves frames from `Display Frames Dict` and annotations from `Display Annotations Dict`.
+    *   Draws boxes/labels on frames.
+    *   Updates `Tkinter GUI Elements` (video labels, stats).
+6.  **Confidence & Attendance**: Periodically, `calculate_multi_camera_confidence` analyzes recent detection history across cameras for tracked individuals, updates the main `Attendance Dict` and the `Attendance Treeview` in the GUI.
+7.  **Logging Display**: A separate function (`process_log_queue`) running in the main thread periodically checks the `Log Queue` and updates the `Status Text Widget`.
+8.  **Session End**: Clicking "Stop Recognition" triggers `stop_recognition`:
+    *   Finalizes confidence scores.
+    *   Performs session-end liveness checks (in `embeddings.py`).
+    *   Updates the final status in the `Attendance Dict` and `Attendance Treeview`.
+9.  **Export**: Clicking "Export Attendance" triggers `export_attendance`:
+    *   Reads the `Attendance Dict`.
+    *   Writes data to an `Excel File Output` and a `Summary Text File Output`.
+
+## Shared Data Structures
+
+*   `display_annotations`: Dictionary mapping camera index to a list of detection results for the latest processed frame. Accessed by processing threads (write) and main thread (read). Requires locking for writes.
+*   `face_tracking`: Dictionary holding information about currently tracked faces (ID, box, TTL, similarity, liveness state). Accessed by processing threads (read/write) and main thread (read for stats). Requires locking for writes.
+*   `attendance`: Dictionary holding the primary attendance record for recognized individuals. Accessed by processing threads (read/initial write on new detection), main thread (confidence update, finalization). Requires locking for writes.
+*   `face_detections`: Tracks detection history per person per camera for confidence calculation. Accessed by processing threads (write) and main thread (read).
+*   `confidence_history`, `liveness_history`, `ear_history`, `blink_history`: Store temporal data for individuals. Accessed by processing threads (write) and main thread (read/finalization).
+*   `Log Queue`: Thread-safe queue for passing log messages from background threads to the main thread.
+*   `Frame Queue`s: Thread-safe queues for passing frames from camera threads to the main thread.
