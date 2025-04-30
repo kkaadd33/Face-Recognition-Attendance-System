@@ -1,4 +1,3 @@
-# Face-Recognition-SDPII
 # Face Recognition Attendance System
 
 This repository contains Python scripts for a Face Recognition Attendance System with varying levels of liveness detection.
