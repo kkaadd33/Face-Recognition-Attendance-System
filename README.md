@@ -5,15 +5,10 @@ This repository contains Python scripts for a Face Recognition Attendance System
 ## Scripts
 
 1.  **`FinalVer.py`**:
-    *   Implements a face recognition system for attendance tracking.
-    *   Includes basic liveness detection features (texture analysis, eye blinks, micro-movements).
-    *   Suitable for general classroom attendance scenarios.
+This script implements a face recognition system designed for attendance tracking in classroom settings. It includes basic liveness detection features such as texture analysis, eye blinks, and micro-movements to help prevent spoofing and ensure reliable identification. The system is optimized for general use in educational environments, providing an efficient and secure way to monitor student attendance.
 
 2.  **`embeddings.py`**:
-    *   An enhanced version focusing more heavily on robust liveness detection.
-    *   Incorporates more advanced checks, including screen detection and session-based analysis (EAR variance).
-    *   Designed to be more resilient against presentation attacks (photos, screen replays).
-
+This is an enhanced version of the system which places a stronger emphasis on robust liveness detection to improve security. It incorporates advanced techniques such as screen detection and session-based analysis using eye aspect ratio (EAR) variance to detect subtle patterns. Designed to resist presentation attacks like photo or screen replays, the system offers increased reliability and protection in real-world deployment scenarios.
 ## Setup
 
 1.  **Dependencies**:
