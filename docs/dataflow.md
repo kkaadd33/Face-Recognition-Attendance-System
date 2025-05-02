@@ -1,4 +1,4 @@
-# Data Flow in the Face Recognition Attendance System
+# Data Flow
 
 This document describes how data moves through our Face Recognition Attendance System from camera input to attendance reporting. We've created this guide based on our implementation experience to help team members understand the system's runtime behavior.
 
