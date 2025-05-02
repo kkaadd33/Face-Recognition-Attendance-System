@@ -1,4 +1,4 @@
-# Face Recognition Attendance System: System Architecture
+System Architecture
 
 ## Overview
 
