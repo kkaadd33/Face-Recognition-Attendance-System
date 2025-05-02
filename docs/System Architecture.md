@@ -12,7 +12,7 @@ This document outlines our approach to designing and implementing the Face Recog
 2. **Face Alignment**  
    Handled implicitly by MTCNN to ensure consistent feature extraction across different head poses. While we initially experimented with explicit alignment using affine transformations, the built-in alignment from MTCNN proved sufficient for our recognition pipeline.
 
-3. **Liveness Detection**  
+3. **Liveness Detection (not fully tested with multiple faces)**  
    Our custom implementation detects spoof attempts using multiple techniques:
    - Texture analysis examines local gradient patterns that differ between real faces and printed photos
    - Movement tracking ensures micro-movements consistent with living subjects
