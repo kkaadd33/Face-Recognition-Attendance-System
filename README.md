@@ -42,17 +42,17 @@ This is an experimental version of the system which places a stronger emphasis o
 
 1.  Navigate to the directory containing the scripts in your terminal.
 2.  Run the desired script using Python:
-    *   For standard recognition: `python FinalVer.py`
-    *   For enhanced liveness detection: `python embeddings.py`
+    *   For standard recognition: `python FaceRecognition.py`
+    *   For enhanced liveness detection: `python Experimental.py`
 
 ## Using the GUI
 
-1.  **Camera Feeds**: The main window displays camera feeds. By default, it attempts to use video files specified in the script (`Classroom1.mp4`, etc. in `FinalVer.py` or `FAKE.mp4`, etc. in `embeddings.py`). You can modify the `self.camera_sources` list in the script to use different video files or webcam indices (e.g., `0`, `1`).
+1.  **Camera Feeds**: The main window displays camera feeds. By default, it attempts to use video files specified in the script (`Classroom1.mp4`, etc. in `FaceRecognition.py` or `FAKE.mp4`, etc. in `Experimental.py`). You can modify the `self.camera_sources` list in the script to use different video files or webcam indices (e.g., `0`, `1`).
 2.  **Camera Controls**: Use the checkboxes in the "Controls" section to activate/deactivate specific camera feeds.
 3.  **Start/Stop Recognition**:
     *   Click "Start Recognition" to begin detecting and identifying faces.
     *   Click "Stop Recognition" to pause the process and finalize attendance based on the session's data.
-4.  **Attendance List**: The left panel shows the list of recognized individuals, their status (Processing, Present, Absent), timestamp, confidence score, and liveness status (`embeddings.py` only).
+4.  **Attendance List**: The left panel shows the list of recognized individuals, their status (Processing, Present, Absent), timestamp, confidence score, and liveness status (`Experimental.py` only).
 5.  **Statistics**: Various statistics (Total Students, Present, Absent, Unknown Faces, Fake Faces, Attendance Rate) are displayed below the camera feeds and in the summary section.
 6.  **Status Log**: The text box in the bottom-right panel shows real-time status messages, warnings, and errors.
 7.  **Export Attendance**: Click "Export Attendance" (after stopping recognition) to save the current session's attendance data to a new Excel file (e.g., `Attendance_YYYY-MM-DD.xlsx`) and a summary text file (`Summary_YYYY-MM-DD.txt`).
